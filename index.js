@@ -55,7 +55,7 @@ c) Nican Ihuan Axcan — $600
 UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla, EdoMex. CP 54080
 HORARIOS: L-V 9:00-17:00 | S 9:00-13:00
 PAGOS: Efectivo, tarjeta en tienda o en línea
-ENVÍOS: Gratis dentro de 9 km. Entregas los jueves.
+ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
 
 REGLAS CRÍTICAS: 
 - Mensajes muy breves con emojis
@@ -77,7 +77,7 @@ CATÁLOGO:
 
 UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla.
 HORARIOS: L-V 9-13h y 15-17h | Sáb 9-13h
-ENVÍOS: Gratis dentro de 9 km. Entregas los jueves.
+ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
 
 REGLAS CRÍTICAS:
 - Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del producto]"
@@ -114,7 +114,7 @@ PRODUCTOS:
 
 UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla.
 HORARIOS: L-V 9:00-17:00 | S 9:00-13:00
-ENVÍOS: Gratis dentro de 9 km. Entregas los jueves.
+ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
 
 REGLAS CRÍTICAS:
 - Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del producto]"
