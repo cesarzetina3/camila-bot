@@ -182,6 +182,27 @@ async function crearLinkPago(nombreProducto, negocio) {
   }
 }
 
+async function sendMessengerMessage(to, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v19.0/me/messages`,
+      {
+        recipient: { id: to },
+        message: { text }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.MESSENGER_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+  } catch (err) {
+    console.error('Error enviando mensaje Messenger:', err.response?.data || err.message);
+  }
+}
+
+
 async function sendMessage(to, text) {
   try {
     await axios.post(
@@ -203,6 +224,21 @@ async function sendMessage(to, text) {
     console.error('Error enviando mensaje:', err.response?.data || err.message);
   }
 }
+
+async function procesarMensajeMessenger(from, texto) {
+  if (!sessions[from]) {
+    sessions[from] = { negocio: null, historial: [] };
+  }
+
+  const session = sessions[from];
+
+  if (!session.negocio) {
+    const negocio = await detectarNegocio(texto);
+    if (negocio !== 'desconocido') {
+      session.negocio = negocio;
+      session.historial = [];
+    } else {
+      const menu = `¡Hola! 👋 Soy Camila, tu asistente virtual.\n\n¿Con cuál negocio quieres hablar?\n\n🍋 *Casa Zetina* — Zumo de limón\n🐾 *Petinc* — Alimento para mascotas\n🪮 *Chirimoya* — Elimin
 
 async function procesarMensaje(from, texto) {
   if (!sessions[from]) {
@@ -284,7 +320,23 @@ app.get('/cancelado', (req, res) => {
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
-    const entry = req.body?.entry?.[0];
+    const body = req.body;
+
+    // Messenger
+    if (body.object === 'page') {
+      const entry = body.entry?.[0];
+      const messaging = entry?.messaging?.[0];
+      if (!messaging || !messaging.message || messaging.message.is_echo) return;
+      const from = messaging.sender.id;
+      const texto = messaging.message.text;
+      if (!texto) return;
+      console.log(`📩 Messenger de ${from}: ${texto}`);
+      await procesarMensajeMessenger(from, texto);
+      return;
+    }
+
+    // WhatsApp
+    const entry = body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const messages = changes?.value?.messages;
     if (!messages || messages.length === 0) return;
@@ -292,11 +344,12 @@ app.post('/webhook', async (req, res) => {
     if (msg.type !== 'text') return;
     const from = msg.from;
     const texto = msg.text.body;
-    console.log(`📩 Mensaje de ${from}: ${texto}`);
+    console.log(`📩 WhatsApp de ${from}: ${texto}`);
     await procesarMensaje(from, texto);
   } catch (err) {
     console.error('Error:', err);
   }
+});
 });
 
 const PORT = process.env.PORT || 3000;
