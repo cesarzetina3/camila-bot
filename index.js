@@ -1,47 +1,20 @@
 const express = require('express');
 const axios = require('axios');
-const Stripe = require('stripe');
 const app = express();
 app.use(express.json());
 
+// ─── CONFIGURACIÓN ───────────────────────────────────────────
 const VERIFY_TOKEN = 'camila2024';
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const STRIPE_KEY = process.env.STRIPE_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || 'TU_TOKEN_AQUI';
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '691461344031006';
+const stripe = require('stripe')(process.env.STRIPE_KEY);
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || 'TU_ANTHROPIC_KEY';
 
-const stripe = Stripe(STRIPE_KEY);
-
+// ─── MEMORIA DE CONVERSACIONES ────────────────────────────────
+// Guardamos historial y negocio seleccionado por usuario
 const sessions = {};
 
-const PRECIOS = {
-  zetina: [
-    { nombre: 'Zumo de limón 5 litros', precio: 550 },
-    { nombre: 'Zumo de limón 3 litros', precio: 350 },
-    { nombre: 'Nican Ihuan Axcan', precio: 600 }
-  ],
-  petinc: [
-    { nombre: 'Croquetas Mantenimiento 20kg', precio: 650 },
-    { nombre: 'Croquetas Estándar 25kg', precio: 750 },
-    { nombre: 'Croquetas Activo 20kg', precio: 800 },
-    { nombre: 'Croquetas Cachorro 20kg', precio: 850 },
-    { nombre: 'Croquetas Razas Pequeñas 20kg', precio: 900 },
-    { nombre: 'Catline Gatos 20kg', precio: 800 }
-  ],
-  chirimoya: [
-    { nombre: 'Tratamiento Cabello Corto', precio: 599 },
-    { nombre: 'Tratamiento Cabello Largo', precio: 799 },
-    { nombre: 'Shampoo Repelente', precio: 150 },
-    { nombre: 'Gel Repelente', precio: 150 },
-    { nombre: 'Repelente Concentrado', precio: 300 }
-  ],
-  hots: [
-    { nombre: 'Top Deportivo', precio: 319 },
-    { nombre: 'Leggin', precio: 399 },
-    { nombre: 'Chamarra Deportiva', precio: 449 }
-  ]
-};
-
+// ─── PROMPTS DE CADA NEGOCIO ─────────────────────────────────
 const BOTS = {
   zetina: {
     name: 'Casa Zetina',
@@ -55,17 +28,13 @@ c) Nican Ihuan Axcan — $600
 UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla, EdoMex. CP 54080
 HORARIOS: L-V 9:00-17:00 | S 9:00-13:00
 PAGOS: Efectivo, tarjeta en tienda o en línea
-ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
+ENVÍOS: El radio de entrega GRATUITA es exactamente 9 km desde Tlalnepantla de baz. Repite siempre "9 km" cuando menciones envío gratis. Entregas los jueves.
 
-REGLAS CRÍTICAS: 
-- Mensajes muy breves con emojis
-- Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del producto]"
-- Ejemplo: "PAGAR Zumo de limón 5 litros"
-- NUNCA prometas enviar el link después, dile que escriba PAGAR`
+REGLAS: CRÍTICO: El envío gratis es a 9 km, NUNCA menciones 3 km. Mensajes muy breves con emojis. Cierra siempre con pregunta orientada a la venta. Crea urgencia (productos limitados). IMPORTANTE: El envío es GRATIS dentro de 9 km. NUNCA digas 3 km. Siempre di 9 km cuando hables de envío gratis. Si el cliente da una dirección, siempre confirma si está dentro de los 9 km antes de decir que es de pago.`
   },
   petinc: {
     name: 'Petinc',
-    system: `Eres Camila, asistente oficial de Petinc. Responde en español con emojis y saltos de línea. Mensajes breves. Guía hacia la venta.
+    system: `Eres Camila, asistente oficial de Petinc. Responde en español con emojis y saltos de línea. Mensajes breves (máximo 180 caracteres). Guía siempre hacia la venta.
 
 CATÁLOGO:
 1. Mantenimiento 16% proteína, 20kg — $650
@@ -75,57 +44,75 @@ CATÁLOGO:
 5. Razas pequeñas 22% proteína, 20kg — $900
 6. Catline 30% proteína, 20kg — $800 (gatos)
 
-UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla.
+UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla, Edo. Méx.
 HORARIOS: L-V 9-13h y 15-17h | Sáb 9-13h
-ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
+PAGOS: Tarjeta
+ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km el costo es $150 fijo. Más de 16 km NO entregamos. Si el cliente pregunta por envío fuera de 9 km, dile SIEMPRE: "El costo de envío es $150 fijos 🚚". Entregas los jueves.
 
-REGLAS CRÍTICAS:
-- Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del producto]"
-- NUNCA prometas enviar el link después`
+REGLAS: Recomienda el producto según mascota. Si preguntan fuera de Petinc: "Solo puedo ayudarte con productos Petinc 🐶🐱"`
   },
   chirimoya: {
     name: 'Chirimoya',
-    system: `Eres Camila, asistente oficial de Chirimoya, clínica de eliminación de piojos. Empatía y urgencia. Máximo 25 palabras por mensaje.
+    system: `Eres Camila, asistente oficial de Chirimoya, clínica especializada en eliminación de piojos y liendres. Habla con empatía, calidez y urgencia. MÁXIMO UNA PREGUNTA POR MENSAJE.
 
-SERVICIOS:
-- Diagnóstico gratuito — $0
-- Tratamiento cabello corto — $599
-- Tratamiento cabello largo — $799
-- Shampoo repelente — $150
-- Gel repelente — $150
-- Repelente concentrado — $300
+MENSAJE DE BIENVENIDA:
+¡Hola! 👋 Bienvenida a Chiri, especialistas en eliminación de piojos y liendres. Nuestros tratamientos completos: 💇 Cabello corto: $599 💇‍♀️ Cabello mediano: $699 💇‍♀️ Cabello largo: $799 ✅ Una sola sesión · Sin químicos · Garantizado ¿Para cuántas personas necesitas el tratamiento?
 
-GARANTÍA: Revisión gratis a los 7 días.
-UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla
-HORARIOS: L-V 9:00-17:00 | S 9:00-13:00
+PRECIOS (dar siempre de forma directa si preguntan):
+- Cabello corto: $599
+- Cabello mediano: $699
+- Cabello largo: $799
+- Diagnóstico gratuito: $0
 
-REGLAS CRÍTICAS:
-- Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del servicio]"
-- NUNCA prometas enviar el link después`
-  },
-  hots: {
-    name: 'Hots',
-    system: `Eres Camila, asistente oficial de Hots, ropa deportiva femenina. Energía y estilo. Mensajes breves con emojis.
+HORARIOS CONCRETOS:
+Lunes a viernes: 9:00, 11:00, 13:00, 15:00, 17:00
+Sábado: 9:00, 11:00, 13:00
 
-PRODUCTOS:
-1. Top deportivo — $319
-2. Leggin — $399
-3. Chamarra deportiva afelpada stretch — $449
+UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla, CDMX. Hay estacionamiento.
+PAGOS: Efectivo, tarjeta, pago en línea.
 
-UBICACIÓN: Av. Vista Hermosa 74, Tlalnepantla.
-HORARIOS: L-V 9:00-17:00 | S 9:00-13:00
-ENVÍOS: Gratis dentro de 9 km. Entre 10 y 16 km costo fijo de $150. Mas de 16 km NO entregamos. Entregas los jueves.
+FLUJO DE CONVERSACIÓN:
+1. Preguntar cuántas personas y tipo de cabello
+2. Responder: "Perfecto 😊 El tratamiento incluye inspección con lupa, escarmiento profesional y aspirado europeo — todo en una sola sesión, sin químicos agresivos. ¿Te viene mejor mañana a las 10am o a las 3pm?"
+3. Confirmar cita: "¡Perfecto! Te agendo para ese horario 🗓️ 📍 Av. Vista Hermosa 74, Tlalnepantla ¿Me dices tu nombre para apartar el lugar?"
+4. Mensaje final: "¡Listo! Tu cita está apartada ✅ 📅 [DÍA] a las [HORA] 📍 Av. Vista Hermosa 74 💰 $[PRECIO] Te esperamos 😊"
 
 REGLAS CRÍTICAS:
-- Cuando el cliente quiera pagar, dile EXACTAMENTE: "Para pagar en línea escribe: PAGAR [nombre del producto]"
-- NUNCA prometas enviar el link después`
-  }
-};
+- NUNCA pidas correo antes de confirmar la cita (es opcional después)
+- NUNCA hagas más de una pregunta por mensaje
+- NUNCA sugieras llamada de audio — si insisten di: "Con gusto te llamamos — ¿cuál es tu número?" 
+- SIEMPRE ofrece horarios concretos: "¿mañana a las 10am o a las 3pm?"
+- SIEMPRE da precios directamente sin preguntas previas
+- Si dice "lo voy a pensar": "Claro 😊 Solo te cuento que entre más rápido se trata, más fácil es eliminarlo. ¿Te aparto un lugar para pasado mañana? No tiene costo y puedes cancelar sin problema 🗓️"
+- Si no responde en 2 horas enviar: "¡Hola! ¿Pudiste ver la información? Todavía tenemos lugares disponibles hoy 😊"
+- Recordatorio 2 horas antes: "¡Hola! 👋 Te recordamos tu cita con Chiri hoy a las [HORA]. 📍 Av. Vista Hermosa 74 ¿Confirmamos tu asistencia? 😊"
 
+// ─── PROMPT PARA DETECTAR NEGOCIO ────────────────────────────
+const SELECTOR_SYSTEM = `Eres Camila, asistente de 4 negocios. Cuando alguien te escriba por primera vez, preséntate y pregúntale con cuál negocio quiere hablar.
+
+Responde SIEMPRE con este formato JSON exacto:
+{"accion": "menu", "mensaje": "tu mensaje aquí"}
+
+El mensaje debe ser amigable, con emojis, máximo 200 caracteres, y mostrar los 4 negocios:
+🍋 Casa Zetina (zumo de limón)
+🐾 Petinc (alimento para mascotas)
+🪮 Chirimoya (eliminación de piojos)
+🏋️ Hots (ropa deportiva)`;
+
+const DETECTOR_SYSTEM = `Analiza el mensaje del usuario y determina a cuál negocio quiere hablar. Responde SOLO con JSON:
+{"negocio": "zetina"} o {"negocio": "petinc"} o {"negocio": "chirimoya"} o {"negocio": "hots"} o {"negocio": "desconocido"}
+
+Palabras clave:
+- zetina: limón, zumo, limon, nican, zetina, casa zetina
+- petinc: croqueta, mascota, perro, gato, alimento, petinc, cachorro
+- chirimoya: piojo, liendre, cabello, chirimoya, tratamiento cabeza
+- hots: ropa, top, leggin, chamarra, deportiva, hots, gym`;
+
+// ─── FUNCIONES DE IA ──────────────────────────────────────────
 async function callClaude(system, messages) {
   const res = await axios.post('https://api.anthropic.com/v1/messages', {
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 300,
+    max_tokens: 500,
     system,
     messages
   }, {
@@ -139,34 +126,26 @@ async function callClaude(system, messages) {
 }
 
 async function detectarNegocio(mensaje) {
-  const m = mensaje.toLowerCase();
-  if (m.includes('limon') || m.includes('limón') || m.includes('zumo') || m.includes('nican') || m.includes('zetina')) return 'zetina';
-  if (m.includes('croqueta') || m.includes('mascota') || m.includes('perro') || m.includes('gato') || m.includes('petinc') || m.includes('cachorro') || m.includes('alimento')) return 'petinc';
-  if (m.includes('piojo') || m.includes('liendre') || m.includes('chirimoya') || m.includes('cabello') || m.includes('piojos')) return 'chirimoya';
-  if (m.includes('ropa') || m.includes('top') || m.includes('leggin') || m.includes('chamarra') || m.includes('hots') || m.includes('deportiva')) return 'hots';
-  return 'desconocido';
+  try {
+    const resp = await callClaude(DETECTOR_SYSTEM, [{ role: 'user', content: mensaje }]);
+    const clean = resp.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return parsed.negocio || 'desconocido';
+  } catch {
+    return 'desconocido';
+  }
 }
 
-async function crearLinkPago(nombreProducto, negocio) {
+// ─── ENVIAR MENSAJE POR WHATSAPP ─────────────────────────────
+async function crearPagoStripe(monto, descripcion) {
   try {
-    // Buscar precio del producto
-    const productos = PRECIOS[negocio] || [];
-    let productoEncontrado = productos.find(p => 
-      nombreProducto.toLowerCase().includes(p.nombre.toLowerCase().split(' ')[0]) ||
-      p.nombre.toLowerCase().includes(nombreProducto.toLowerCase().split(' ')[0])
-    );
-    
-    if (!productoEncontrado) {
-      productoEncontrado = productos[0]; // usar primer producto si no encuentra
-    }
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
           currency: 'mxn',
-          product_data: { name: productoEncontrado.nombre },
-          unit_amount: productoEncontrado.precio * 100,
+          product_data: { name: descripcion },
+          unit_amount: monto * 100,
         },
         quantity: 1,
       }],
@@ -174,14 +153,12 @@ async function crearLinkPago(nombreProducto, negocio) {
       success_url: 'https://camila-bot-x6vl.onrender.com/gracias',
       cancel_url: 'https://camila-bot-x6vl.onrender.com/cancelado',
     });
-    
-    return { url: session.url, producto: productoEncontrado };
+    return session.url;
   } catch (err) {
-    console.error('Error Stripe:', err.message);
+    console.error('Error Stripe:', err);
     return null;
   }
 }
-
 async function sendMessage(to, text) {
   try {
     await axios.post(
@@ -204,6 +181,7 @@ async function sendMessage(to, text) {
   }
 }
 
+// ─── PROCESAR MENSAJE ENTRANTE ────────────────────────────────
 async function procesarMensaje(from, texto) {
   if (!sessions[from]) {
     sessions[from] = { negocio: null, historial: [] };
@@ -211,46 +189,48 @@ async function procesarMensaje(from, texto) {
 
   const session = sessions[from];
 
-  // Detectar comando PAGAR
-  if (texto.toUpperCase().startsWith('PAGAR')) {
-    const nombreProducto = texto.substring(5).trim() || 'producto';
-    const negocio = session.negocio || 'zetina';
-    
-    console.log(`💳 Generando link de pago para: ${nombreProducto}`);
-    const resultado = await crearLinkPago(nombreProducto, negocio);
-    
-    if (resultado) {
-      await sendMessage(from, `✅ ¡Aquí tu link de pago seguro! 🔒\n\n*${resultado.producto.nombre}*\n💰 $${resultado.producto.precio} MXN\n\n👇 Paga aquí:\n${resultado.url}\n\n_Link válido por 24 horas_ ⏱️`);
-    } else {
-      await sendMessage(from, `❌ Hubo un error al generar el link. Por favor escríbenos directamente al 55 5106 2364 📱`);
-    }
-    return;
-  }
-
-  // Si no tiene negocio asignado
+  // Si no tiene negocio asignado, detectar o mostrar menú
   if (!session.negocio) {
     const negocio = await detectarNegocio(texto);
 
     if (negocio !== 'desconocido') {
       session.negocio = negocio;
+      const bot = BOTS[negocio];
       session.historial = [];
+      session.historial.push({ role: 'user', content: texto });
+
+      const respuesta = await callClaude(bot.system, session.historial);
+      session.historial.push({ role: 'assistant', content: respuesta });
+      await sendMessage(from, respuesta);
     } else {
-      const menu = `¡Hola! 👋 Soy Camila, tu asistente virtual.\n\n¿Con cuál negocio quieres hablar?\n\n🍋 *Casa Zetina* — Zumo de limón\n🐾 *Petinc* — Alimento para mascotas\n🪮 *Chirimoya* — Eliminación de piojos\n🏋️ *Hots* — Ropa deportiva\n\nSolo dime el nombre o el producto que buscas 😊`;
+      // Mostrar menú de negocios
+      const menu = `¡Hola! 👋 Soy Camila, tu asistente virtual.
+
+¿Con cuál negocio quieres hablar?
+
+🍋 *Casa Zetina* — Zumo de limón
+🐾 *Petinc* — Alimento para mascotas
+🪮 *Chirimoya* — Eliminación de piojos
+🏋️ *Hots* — Ropa deportiva
+
+Solo dime el nombre o el producto que buscas 😊`;
       await sendMessage(from, menu);
-      return;
     }
+    return;
   }
 
-  // Verificar cambio de negocio
+  // Verificar si el usuario quiere cambiar de negocio
   const negocioNuevo = await detectarNegocio(texto);
   if (negocioNuevo !== 'desconocido' && negocioNuevo !== session.negocio) {
     session.negocio = negocioNuevo;
     session.historial = [];
   }
 
+  // Responder con el bot del negocio
   const bot = BOTS[session.negocio];
   session.historial.push({ role: 'user', content: texto });
 
+  // Limitar historial a últimos 10 mensajes
   if (session.historial.length > 20) {
     session.historial = session.historial.slice(-20);
   }
@@ -261,10 +241,12 @@ async function procesarMensaje(from, texto) {
   await sendMessage(from, respuesta);
 }
 
+// ─── WEBHOOK VERIFICATION ─────────────────────────────────────
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
+
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('Webhook verificado ✅');
     res.status(200).send(challenge);
@@ -273,32 +255,53 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-app.get('/gracias', (req, res) => {
-  res.send('<h1>✅ ¡Pago exitoso! Gracias por tu compra. Te contactaremos pronto.</h1>');
-});
-
-app.get('/cancelado', (req, res) => {
-  res.send('<h1>❌ Pago cancelado. Escríbenos si necesitas ayuda.</h1>');
-});
-
+// ─── RECIBIR MENSAJES ─────────────────────────────────────────
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
+  res.sendStatus(200); // Responder rápido a Meta
+
   try {
     const entry = req.body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const messages = changes?.value?.messages;
+
     if (!messages || messages.length === 0) return;
+
     const msg = messages[0];
     if (msg.type !== 'text') return;
+
     const from = msg.from;
     const texto = msg.text.body;
+
     console.log(`📩 Mensaje de ${from}: ${texto}`);
-    await procesarMensaje(from, texto);
+// Detectar si el mensaje contiene confirmación de pedido
+if (texto.toLowerCase().includes('confirmo') || texto.toLowerCase().includes('quiero pagar') || texto.toLowerCase().includes('pagar')) {
+  const session = sessions[from];
+  if (session) {
+  if (!session.negocio) session.negocio = 'zetina';
+    const precios = {
+      zetina: { monto: 550, desc: 'Zumo de limón 5L - Casa Zetina' },
+      petinc: { monto: 750, desc: 'Croquetas Petinc' },
+      chirimoya: { monto: 599, desc: 'Tratamiento Chirimoya' },
+      hots: { monto: 399, desc: 'Leggin Hots' }
+    };
+    const prod = precios[session.negocio];
+    if (prod) {
+      const linkPago = await crearPagoStripe(prod.monto, prod.desc);
+      if (linkPago) {
+        await sendMessage(from, `✅ ¡Perfecto! Aquí tu link de pago seguro 👇\n\n${linkPago}\n\n💳 Acepta tarjetas de crédito y débito.`);
+        return;
+      }
+    }
+  }
+}    
+await procesarMensaje(from, texto);
+
   } catch (err) {
-    console.error('Error:', err);
+    console.error('Error procesando mensaje:', err);
   }
 });
 
+// ─── INICIO ───────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Camila WhatsApp Bot corriendo en puerto ${PORT}`);
