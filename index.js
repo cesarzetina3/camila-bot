@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const axios = require('axios');
 const Stripe = require('stripe');
 const app = express();
@@ -85,7 +85,7 @@ REGLAS CRÍTICAS:
   },
   chirimoya: {
     name: 'Chirimoya',
-    system: `Eres Camila, asistente oficial de Chirimoya, clínica de eliminación de piojos. Empatía y urgencia. Máximo 25 palabras por mensaje.
+    system: `Eres Camila, asistente oficial de Chirimoya, clínica de eliminación de piojos. Empatía y urgencia. MÁXIMO UNA PREGUNTA POR MENSAJE. NUNCA sugieras llamada de audio. SIEMPRE ofrece horarios concretos: mañana a las 10am o a las 3pm. SIEMPRE da precios directo. Si dice lo voy a pensar: Claro, entre mas rapido se trata mas facil. Te aparto un lugar sin costo.
 
 SERVICIOS:
 - Diagnóstico gratuito — $0
