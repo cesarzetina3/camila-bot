@@ -89,11 +89,35 @@ async function callClaude(historial) {
  
 async function crearLinkPago(nombreProducto) {
   try {
+    const busqueda = nombreProducto.toLowerCase();
+ 
+    // Busqueda por coincidencia exacta del nombre completo
     let productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) {
-      return p.nombre.toLowerCase().includes(nombreProducto.toLowerCase().split(' ')[0]) ||
-        nombreProducto.toLowerCase().includes(p.nombre.toLowerCase().split(' ')[0]);
+      return busqueda.includes(p.nombre.toLowerCase());
     });
-    if (!productoEncontrado) productoEncontrado = PRECIOS_CHIRIMOYA[0];
+ 
+    // Si no hay coincidencia exacta, buscar por palabras clave especificas
+    if (!productoEncontrado) {
+      if (busqueda.includes('largo')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('largo'); });
+      } else if (busqueda.includes('mediano') || busqueda.includes('medio')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('mediano'); });
+      } else if (busqueda.includes('corto')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('corto'); });
+      } else if (busqueda.includes('shampoo') || busqueda.includes('champu')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('shampoo'); });
+      } else if (busqueda.includes('gel')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('gel'); });
+      } else if (busqueda.includes('concentrado') || busqueda.includes('repelente')) {
+        productoEncontrado = PRECIOS_CHIRIMOYA.find(function(p) { return p.nombre.toLowerCase().includes('concentrado'); });
+      }
+    }
+ 
+    // Si aun no encuentra, usar el primero como fallback y loguearlo
+    if (!productoEncontrado) {
+      console.log('Producto no identificado: "' + nombreProducto + '" — usando Cabello Corto como fallback');
+      productoEncontrado = PRECIOS_CHIRIMOYA[0];
+    }
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
@@ -240,4 +264,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {
   console.log('Chirimoya Bot corriendo en puerto ' + PORT);
 });
- 
