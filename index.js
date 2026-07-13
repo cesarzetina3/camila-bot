@@ -14,6 +14,7 @@ const stripe = Stripe(STRIPE_KEY);
 const sessions = {};
 const SESSION_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
+// ─── PRODUCTOS ───────────────────────────────────────────────
 const PRECIOS_CHIRIMOYA = [
   { nombre: 'Tratamiento Cabello Corto',   precio: 599 },
   { nombre: 'Tratamiento Cabello Mediano', precio: 699 },
@@ -27,6 +28,7 @@ const PRECIOS_PETINC = [
   { nombre: 'Petline Mantenimiento 20kg', precio: 650 }
 ];
 
+// ─── SISTEMAS DE CADA NEGOCIO ────────────────────────────────
 const SYSTEM_CHIRIMOYA = `Eres Camila, asistente de Chirimoya, clinica especializada en eliminacion de piojos y liendres en Tlalnepantla.
 
 MENSAJE DE BIENVENIDA — usa esto exactamente cuando llegue un cliente nuevo:
@@ -80,14 +82,12 @@ Envio GRATIS dentro de 9km de Tlalnepantla
 
 Alimento balanceado con 15% proteina, ideal para perros adultos guardianes o de compania.
 
-Antes de comprar, quieres que te mandemos una muestra gratis para que tu perro la pruebe?
-Sin costo. Sin compromiso. Solo dinos tu colonia."
+Cuantos sacos necesitas?"
 
 PRODUCTO:
 - Petline Mantenimiento 20kg: $650
 - Envio gratis dentro de 9km de Av. Vista Hermosa 74, Tlalnepantla
 - Envio fuera de rango: NO disponible
-- MUESTRA GRATIS disponible a domicilio dentro de los 9km
 
 INFORMACION DEL PRODUCTO:
 - 15% proteina minima, 6% grasa minima
@@ -101,25 +101,27 @@ GUIA DE ALIMENTACION:
 - Perros 25-45kg: 4 a 7 tazas por dia
 (1 taza = aprox 100g)
 
-PROCESO DE PEDIDO:
-1. Ofrecer muestra gratis primero si el cliente no ha probado el producto
-2. Pedir colonia para verificar si esta dentro de 9km
-3. Si esta dentro: confirmar envio gratis de muestra o saco
-4. Si esta fuera: informar que no se puede entregar
-5. Para pedido de saco: pago ANTICIPADO obligatorio
-6. Indicar: "Para pagar escribe PAGAR Petline Mantenimiento 20kg"
-7. Confirmar entrega el jueves
+PROCESO DE PEDIDO — IMPORTANTE:
+El pago es ANTICIPADO antes de surtir el pedido. Flujo obligatorio:
+1. Cliente dice cuantos sacos quiere
+2. Confirmar cantidad y total ($650 x sacos)
+3. Pedir colonia o zona para verificar si esta dentro de los 9km
+4. Si esta dentro del rango: confirmar que el envio es GRATIS
+5. Si esta fuera del rango: informar que no se puede entregar
+6. Pedir nombre completo para el pedido
+7. Indicar que el pago es anticipado: "Para apartar tu pedido el pago es anticipado. Para pagar en linea escribe PAGAR Petline Mantenimiento 20kg"
+8. Cuando confirme pago: coordinar fecha de entrega (entregas los jueves)
 
 REGLAS CRITICAS:
 1. MAXIMO UNA PREGUNTA POR MENSAJE
 2. Precio SIEMPRE inmediato: $650 por saco de 20kg
 3. NUNCA surtir sin pago anticipado confirmado
-4. Verificar SIEMPRE si esta dentro de 9km
+4. Verificar SIEMPRE si esta dentro de 9km antes de confirmar envio gratis
 5. Entregas solo los JUEVES
-6. Muestra gratis disponible dentro de 9km sin costo ni compromiso
-7. Seguimiento 3 dias despues de muestra: "Como le fue a tu perro con la muestra? El saco completo es $650 con envio gratis el jueves."
-8. Responde en espanol con emojis moderados, mensajes breves maximo 200 caracteres`;
+6. Si dice "lo voy a pensar": "Claro! Solo te comento que los precios son fijos y el envio gratis solo aplica dentro de los 9km. Cuando quieras apartar tu pedido con gusto te ayudo."
+7. Responde en espanol con emojis moderados, mensajes breves maximo 200 caracteres`;
 
+// ─── DETECTAR NEGOCIO ────────────────────────────────────────
 function detectarNegocio(texto) {
   const m = texto.toLowerCase();
   if (m.includes('petinc') || m.includes('croqueta') || m.includes('perro') ||
@@ -130,22 +132,30 @@ function detectarNegocio(texto) {
   return null;
 }
 
+// ─── LLAMADA A CLAUDE ────────────────────────────────────────
 async function callClaude(system, historial) {
-  const res = await axios.post('https://api.anthropic.com/v1/messages', {
-    model: 'claude-haiku-4-5',
-    max_tokens: 300,
-    system: system,
-    messages: historial
-  }, {
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01'
-    }
-  });
-  return res.data.content[0].text;
+  try {
+    const res = await axios.post('https://api.anthropic.com/v1/messages', {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      system: system,
+      messages: historial
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01'
+      }
+    });
+    return res.data.content[0].text;
+  } catch (err) {
+    const detalle = err.response ? JSON.stringify(err.response.data) : err.message;
+    console.error('Error Claude detalle:', detalle);
+    throw err;
+  }
 }
 
+// ─── CREAR LINK DE PAGO ──────────────────────────────────────
 async function crearLinkPago(nombreProducto, negocio) {
   try {
     const busqueda = nombreProducto.toLowerCase();
@@ -175,6 +185,7 @@ async function crearLinkPago(nombreProducto, negocio) {
       productoEncontrado = precios[0];
     }
 
+    // Para Petinc detectar cantidad de sacos
     let cantidad = 1;
     const matchCantidad = nombreProducto.match(/(\d+)\s*(saco|bolsa|kg|kilo)/i);
     if (matchCantidad && negocio === 'petinc') {
@@ -203,6 +214,7 @@ async function crearLinkPago(nombreProducto, negocio) {
   }
 }
 
+// ─── ENVIAR MENSAJE ──────────────────────────────────────────
 async function sendMessage(to, text) {
   try {
     await axios.post(
@@ -215,6 +227,7 @@ async function sendMessage(to, text) {
   }
 }
 
+// ─── SESIONES ────────────────────────────────────────────────
 function obtenerSesion(from) {
   const ahora = Date.now();
   if (!sessions[from]) {
@@ -229,14 +242,17 @@ function obtenerSesion(from) {
   return sessions[from];
 }
 
+// ─── PROCESAR MENSAJE ────────────────────────────────────────
 async function procesarMensaje(from, texto) {
   const session = obtenerSesion(from);
 
+  // Detectar negocio si aun no esta definido
   if (!session.negocio) {
     const negocioDetectado = detectarNegocio(texto);
     if (negocioDetectado) {
       session.negocio = negocioDetectado;
       session.historial = [];
+      console.log('Negocio detectado para ' + from + ': ' + negocioDetectado);
     } else {
       await sendMessage(from,
         'Hola! 👋 Para ayudarte mejor, dime:\n\n' +
@@ -247,12 +263,15 @@ async function procesarMensaje(from, texto) {
     }
   }
 
+  // Cambio de negocio dentro de la misma sesion
   const negocioNuevo = detectarNegocio(texto);
   if (negocioNuevo && negocioNuevo !== session.negocio) {
     session.negocio = negocioNuevo;
     session.historial = [];
+    console.log('Cambio de negocio para ' + from + ': ' + negocioNuevo);
   }
 
+  // Manejo de pago
   if (texto.toUpperCase().startsWith('PAGAR')) {
     const nombreProducto = texto.substring(5).trim() ||
       (session.negocio === 'petinc' ? 'Petline Mantenimiento 20kg' : 'Tratamiento Cabello Corto');
@@ -271,6 +290,7 @@ async function procesarMensaje(from, texto) {
     return;
   }
 
+  // Respuesta con Claude segun negocio
   const system = session.negocio === 'petinc' ? SYSTEM_PETINC : SYSTEM_CHIRIMOYA;
   session.historial.push({ role: 'user', content: texto });
   if (session.historial.length > 20) session.historial = session.historial.slice(-20);
@@ -279,6 +299,7 @@ async function procesarMensaje(from, texto) {
   await sendMessage(from, respuesta);
 }
 
+// ─── RUTAS ───────────────────────────────────────────────────
 app.get('/webhook', function(req, res) {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -314,6 +335,7 @@ app.post('/webhook', async function(req, res) {
     const msg = messages[0];
     const from = msg.from;
     if (msg.type !== 'text') {
+      console.log('Mensaje no-texto de ' + from + ' tipo: ' + msg.type);
       await sendMessage(from,
         'Hola! Solo puedo leer mensajes de texto por el momento 😊\n\n' +
         'Escribe *Petinc* o *Chirimoya* para iniciar.'
