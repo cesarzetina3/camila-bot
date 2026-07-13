@@ -247,11 +247,13 @@ async function procesarMensaje(from, texto) {
   const session = obtenerSesion(from);
 
   // Detectar negocio si aun no esta definido
+  let primerMensaje = false;
   if (!session.negocio) {
     const negocioDetectado = detectarNegocio(texto);
     if (negocioDetectado) {
       session.negocio = negocioDetectado;
       session.historial = [];
+      primerMensaje = true;
       console.log('Negocio detectado para ' + from + ': ' + negocioDetectado);
     } else {
       await sendMessage(from,
@@ -261,14 +263,15 @@ async function procesarMensaje(from, texto) {
       );
       return;
     }
-  }
-
-  // Cambio de negocio dentro de la misma sesion
-  const negocioNuevo = detectarNegocio(texto);
-  if (negocioNuevo && negocioNuevo !== session.negocio) {
-    session.negocio = negocioNuevo;
-    session.historial = [];
-    console.log('Cambio de negocio para ' + from + ': ' + negocioNuevo);
+  } else {
+    // Cambio de negocio dentro de la misma sesion
+    const negocioNuevo = detectarNegocio(texto);
+    if (negocioNuevo && negocioNuevo !== session.negocio) {
+      session.negocio = negocioNuevo;
+      session.historial = [];
+      primerMensaje = true;
+      console.log('Cambio de negocio para ' + from + ': ' + negocioNuevo);
+    }
   }
 
   // Manejo de pago
@@ -292,7 +295,15 @@ async function procesarMensaje(from, texto) {
 
   // Respuesta con Claude segun negocio
   const system = session.negocio === 'petinc' ? SYSTEM_PETINC : SYSTEM_CHIRIMOYA;
-  session.historial.push({ role: 'user', content: texto });
+
+  // Si es el primer mensaje de activacion del negocio, mandamos saludo vacio
+  // para que Claude responda con el mensaje de bienvenida sin duplicar el historial
+  if (primerMensaje) {
+    session.historial.push({ role: 'user', content: 'hola' });
+  } else {
+    session.historial.push({ role: 'user', content: texto });
+  }
+
   if (session.historial.length > 20) session.historial = session.historial.slice(-20);
   const respuesta = await callClaude(system, session.historial);
   session.historial.push({ role: 'assistant', content: respuesta });
