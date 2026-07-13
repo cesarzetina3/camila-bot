@@ -132,7 +132,7 @@ function detectarNegocio(texto) {
 
 async function callClaude(system, historial) {
   const res = await axios.post('https://api.anthropic.com/v1/messages', {
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-haiku-4-5',
     max_tokens: 300,
     system: system,
     messages: historial
