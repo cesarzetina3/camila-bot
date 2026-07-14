@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const Stripe = require('stripe');
 const nodemailer = require('nodemailer');
+const mongoose = require('mongoose');
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -17,11 +18,44 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const EMAIL_DESTINO = process.env.EMAIL_DESTINO || 'cesarzetina@outlook.com';
 const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '123456789';
 const NUMERO_RESPUESTA = process.env.NUMERO_RESPUESTA || '5551062364';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const stripe = Stripe(STRIPE_KEY);
 const sessions = {};
-const conversaciones = {}; // almacen de conversaciones para el panel
 const SESSION_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+
+// ─── MONGODB ──────────────────────────────────────────────────
+const MensajeSchema = new mongoose.Schema({
+  numero: String,
+  negocio: String,
+  rol: String,
+  texto: String,
+  hora: String,
+  leido: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+const Mensaje = mongoose.model('Mensaje', MensajeSchema);
+
+// Cache en memoria para el panel (se sincroniza con MongoDB)
+const conversaciones = {};
+
+async function conectarMongo() {
+  if (!MONGODB_URI) { console.log('Sin MONGODB_URI — conversaciones solo en memoria'); return; }
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('MongoDB conectado');
+    // Cargar ultimas conversaciones al iniciar
+    const ultimos = await Mensaje.find().sort({ createdAt: -1 }).limit(500).lean();
+    ultimos.reverse().forEach(m => {
+      if (!conversaciones[m.numero]) {
+        conversaciones[m.numero] = { numero: m.numero, negocio: m.negocio, mensajes: [], ultimaActividad: new Date(m.createdAt).getTime(), leido: m.leido };
+      }
+      conversaciones[m.numero].mensajes.push({ rol: m.rol, texto: m.texto, hora: m.hora });
+    });
+    console.log('Conversaciones cargadas desde MongoDB: ' + Object.keys(conversaciones).length);
+  } catch (err) { console.error('Error MongoDB:', err.message); }
+}
+conectarMongo();
 
 // ─── NODEMAILER ───────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -59,23 +93,18 @@ async function enviarEmailNotificacion(from, mensaje, negocio) {
 
 // ─── ALMACENAR CONVERSACION ───────────────────────────────────
 function guardarMensaje(from, rol, texto, negocio) {
+  const hora = new Date().toLocaleString('es-MX');
   if (!conversaciones[from]) {
-    conversaciones[from] = {
-      numero: from,
-      negocio: negocio || 'desconocido',
-      mensajes: [],
-      ultimaActividad: Date.now(),
-      leido: false
-    };
+    conversaciones[from] = { numero: from, negocio: negocio || 'desconocido', mensajes: [], ultimaActividad: Date.now(), leido: false };
   }
-  conversaciones[from].mensajes.push({
-    rol: rol,
-    texto: texto,
-    hora: new Date().toLocaleString('es-MX')
-  });
+  conversaciones[from].mensajes.push({ rol, texto, hora });
   conversaciones[from].ultimaActividad = Date.now();
   if (negocio) conversaciones[from].negocio = negocio;
   if (rol === 'cliente') conversaciones[from].leido = false;
+  // Persistir en MongoDB
+  if (mongoose.connection.readyState === 1) {
+    Mensaje.create({ numero: from, negocio: negocio || conversaciones[from].negocio, rol, texto, hora, leido: rol === 'cliente' ? false : true }).catch(err => console.error('Error guardando en MongoDB:', err.message));
+  }
 }
 
 // ─── PRODUCTOS ───────────────────────────────────────────────
