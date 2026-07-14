@@ -278,7 +278,7 @@ async function procesarMensaje(from, texto) {
       guardarMensaje(from, 'cliente', texto, null);
       guardarMensaje(from, 'bot', resp, null);
       await sendMessage(from, resp);
-      await enviarEmailNotificacion(from, texto, null);
+      enviarEmailNotificacion(from, texto, null); // sin await
       return;
     }
   } else {
@@ -287,7 +287,7 @@ async function procesarMensaje(from, texto) {
   }
 
   guardarMensaje(from, 'cliente', texto, session.negocio);
-  await enviarEmailNotificacion(from, texto, session.negocio);
+  enviarEmailNotificacion(from, texto, session.negocio); // sin await para no bloquear el bot
 
   if (texto.toUpperCase().startsWith('PAGAR')) {
     const np = texto.substring(5).trim() || (session.negocio === 'petinc' ? 'Petline Mantenimiento 20kg' : 'Tratamiento Cabello Corto');
@@ -489,7 +489,7 @@ app.post('/webhook', async (req, res) => {
       guardarMensaje(from, 'cliente', '[Mensaje no-texto: ' + msg.type + ']', sessions[from] ? sessions[from].negocio : null);
       guardarMensaje(from, 'bot', resp, sessions[from] ? sessions[from].negocio : null);
       await sendMessage(from, resp);
-      await enviarEmailNotificacion(from, '[Mensaje no-texto: ' + msg.type + ']', null);
+      enviarEmailNotificacion(from, '[Mensaje no-texto: ' + msg.type + ']', null); // sin await
       return;
     }
     const texto = msg.text.body;
