@@ -64,6 +64,8 @@ const transporter = nodemailer.createTransport({
 });
 
 async function enviarEmailNotificacion(from, mensaje, negocio) {
+  // Email desactivado temporalmente
+  return;
   try {
     await transporter.sendMail({
       from: '"Camila Bot" <' + GMAIL_USER + '>',
