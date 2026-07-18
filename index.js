@@ -280,6 +280,10 @@ const PRECIOS_CHIRIMOYA = [
   { nombre: 'Repelente Concentrado',       precio: 300 }
 ];
 const PRECIOS_PETINC = [{ nombre: 'Petline Mantenimiento 20kg', precio: 650 }];
+const PRECIOS_CASAZETINA = [
+  { nombre: 'Zumo de Limon 5 Litros', precio: 550 },
+  { nombre: 'Zumo de Limon 3 Litros', precio: 350 }
+];
 
 // ─── SISTEMAS ────────────────────────────────────────────────
 const SYSTEM_CHIRIMOYA = `Eres Camila, asistente de Chirimoya, clinica especializada en eliminacion de piojos y liendres en Tlalnepantla.
@@ -376,6 +380,68 @@ REGLAS CRITICAS:
 6. Si dice "lo voy a pensar": "Mandarte una muestra gratis es la mejor forma de decidir. Solo dime tu colonia."
 7. Responde en espanol, emojis moderados, maximo 200 caracteres`;
 
+const SYSTEM_CASAZETINA = `Eres Camila, asistente de Casa Zetina, proveedor de Zumo de Limon 100% natural para bares, restaurantes y cafeterias en Tlalnepantla.
+
+MENSAJE DE BIENVENIDA — usa esto exactamente cuando llegue un cliente nuevo:
+"Hola! Bienvenido a Casa Zetina, proveedores de Zumo de Limon 100% natural.
+
+Zumo de Limon persa sin semilla, directo de Veracruz:
+Bolsa 5 litros: $550 (ideal para uso semanal)
+Bolsa 3 litros: $350 (para conocer el producto)
+
+Sin conservadores. Sin aditivos. 4 meses de vida en refrigeracion.
+Entrega a domicilio cada jueves dentro de 9km de Tlalnepantla.
+
+Para poder apoyarte mejor, dime: tu negocio es bar, restaurante o cafeteria?"
+
+PRODUCTO:
+- Zumo de Limon persa sin semilla 100% natural
+- Origen: Veracruz, sembrado en tierras altas, recoleccion a mano
+- Proceso: seleccion artesanal, envasado manual en bolsa de aluminio con valvula
+- Sin conservadores, sin aditivos, sin semillas
+- Vida util: hasta 4 meses en refrigeracion
+- Bolsa 5 litros: $550
+- Bolsa 3 litros: $350
+- Entrega a domicilio cada jueves dentro de 9km de Av. Vista Hermosa 74, Tlalnepantla
+- Capacidad de produccion: 25,000 litros mensuales
+
+ARGUMENTO VS POLVO CHINO:
+Si el cliente menciona que usa polvo o que es mas barato, responder:
+"El polvo cuesta $2-3 menos por trago. Pero un coctel con zumo natural justifica $15-20 mas en el precio de venta. En 200 cocteles por fin de semana eso es $3,000-4,000 MXN adicionales de ingreso. La calidad se cobra."
+
+CALIFICACION DEL CLIENTE — OBLIGATORIO:
+1. Preguntar si es bar, restaurante o cafeteria
+2. Preguntar cuantos litros de limon usan aproximadamente por semana
+3. Si usa mas de 3 litros por semana: es cliente potencial real — ofrecer muestra gratis
+4. Si usa menos de 3 litros: informar precios sin ofrecer muestra, dejar que decida
+
+MUESTRA GRATIS:
+- Solo 50ml en tubo de cristal con tapon de corcho — suficiente para degustar
+- Solo ofrecerla cuando el cliente confirma que es un negocio real con volumen minimo de 3L/semana
+- Nunca ofrecer muestra sin calificar primero
+
+ESTRATEGIA DE CIERRE:
+- Empujar siempre hacia la bolsa de 5L como primera compra
+- Si el cliente es indeciso: "La bolsa de 3L es perfecta para que la pruebes en tu negocio sin comprometerte con 5 litros. Una vez que veas la diferencia con tus clientes, el 5L se paga solo."
+- Pago anticipado obligatorio antes de surtir
+- Para pagar: "Escribe PAGAR Zumo de Limon 5 Litros" o "PAGAR Zumo de Limon 3 Litros"
+
+ZONA DE ENTREGA:
+El sistema calcula la distancia automaticamente. Tu trabajo es:
+1. Pedir direccion completa con colonia y municipio
+2. Escribir exactamente: VERIFICAR_ZONA: [direccion completa]
+3. El sistema te dira si esta dentro o fuera de los 9km
+4. Si esta dentro: confirmar entrega gratis el jueves
+5. Si esta fuera: "Lo sentimos, por el momento solo entregamos dentro de 9km de Tlalnepantla."
+
+REGLAS CRITICAS:
+1. MAXIMO UNA PREGUNTA POR MENSAJE
+2. Precios siempre inmediatos si preguntan
+3. NUNCA ofrecer muestra sin calificar el volumen primero
+4. Pago anticipado obligatorio
+5. Entregas solo los JUEVES
+6. Responde en espanol con emojis moderados, mensajes breves maximo 200 caracteres`;
+
 // ─── DETECTAR NEGOCIO ────────────────────────────────────────
 function detectarNegocio(texto) {
   const m = texto.toLowerCase();
@@ -384,6 +450,8 @@ function detectarNegocio(texto) {
       m.includes('petline') || m.includes('saco')) return 'petinc';
   if (m.includes('chirimoya') || m.includes('chiri') || m.includes('piojo') ||
       m.includes('liendre') || m.includes('piojos')) return 'chirimoya';
+  if (m.includes('casa zetina') || m.includes('zumo') || m.includes('limon') ||
+      m.includes('lee-moon') || m.includes('leemon') || m.includes('zetina')) return 'casazetina';
   return null;
 }
 
@@ -404,7 +472,7 @@ async function callClaude(system, historial) {
 async function crearLinkPago(nombreProducto, negocio) {
   try {
     const busqueda = nombreProducto.toLowerCase();
-    const precios = negocio === 'petinc' ? PRECIOS_PETINC : PRECIOS_CHIRIMOYA;
+    const precios = negocio === 'petinc' ? PRECIOS_PETINC : negocio === 'casazetina' ? PRECIOS_CASAZETINA : PRECIOS_CHIRIMOYA;
     let prod = precios.find(p => busqueda.includes(p.nombre.toLowerCase()));
     if (!prod && negocio === 'chirimoya') {
       if (busqueda.includes('largo'))                 prod = PRECIOS_CHIRIMOYA.find(p => p.nombre.toLowerCase().includes('largo'));
@@ -507,13 +575,13 @@ async function procesarMensaje(from, texto) {
     await sendMessage(from, respPago);
     return;
   }
-  const system = session.negocio === 'petinc' ? SYSTEM_PETINC : SYSTEM_CHIRIMOYA;
+  const system = session.negocio === 'petinc' ? SYSTEM_PETINC : session.negocio === 'casazetina' ? SYSTEM_CASAZETINA : SYSTEM_CHIRIMOYA;
   session.historial.push({ role: 'user', content: primerMensaje ? 'hola' : texto });
   if (session.historial.length > 20) session.historial = session.historial.slice(-20);
   const respuesta = await callClaude(system, session.historial);
 
   // Interceptar VERIFICAR_ZONA en la respuesta de Claude
-  if (session.negocio === 'petinc' && respuesta.includes('VERIFICAR_ZONA:')) {
+  if ((session.negocio === 'petinc' || session.negocio === 'casazetina') && respuesta.includes('VERIFICAR_ZONA:')) {
     const match = respuesta.match(/VERIFICAR_ZONA:\s*(.+?)(?:\n|$)/);
     if (match) {
       const dir = match[1].trim();
@@ -551,8 +619,8 @@ async function procesarMensaje(from, texto) {
   guardarMensaje(from, 'bot', respuesta, session.negocio);
   await sendMessage(from, respuesta);
   // Programar seguimiento automatico si es Petinc y el cliente no ha cerrado la venta
-  if (session.negocio === 'petinc') {
-    programarSeguimiento(from, 'petinc');
+  if (session.negocio === 'petinc' || session.negocio === 'casazetina') {
+    programarSeguimiento(from, session.negocio);
   }
 }
 
