@@ -539,6 +539,10 @@ async function procesarMensaje(from, texto) {
       session.historial.push({ role: 'assistant', content: msgZona });
       guardarMensaje(from, 'bot', msgZona, session.negocio);
       await sendMessage(from, msgZona);
+      // Activar seguimiento si la zona esta dentro
+      if (km !== null && km <= RADIO_KM) {
+        programarSeguimiento(from, 'petinc');
+      }
       return;
     }
   }
