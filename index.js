@@ -92,6 +92,40 @@ async function conectarMongo() {
 }
 conectarMongo();
 
+// ─── SEGUIMIENTO AUTOMATICO ──────────────────────────────────
+const seguimientos = {}; // { numero: [timeout1, timeout2, timeout3] }
+
+function programarSeguimiento(from, negocio) {
+  // Cancelar seguimientos anteriores
+  cancelarSeguimiento(from);
+  
+  const msgs = [
+    { delay: 3 * 60 * 1000,  msg: '¡Hola! 😊 ¿Pudiste ver la información? Todavía tenemos disponibilidad para enviarte la muestra gratis esta semana.' },
+    { delay: 6 * 60 * 1000,  msg: '¿Te quedó alguna duda sobre el alimento? Con gusto te ayudo. 🐕 Recuerda que la muestra es gratis y sin compromiso.' },
+    { delay: 9 * 60 * 1000,  msg: 'Última oportunidad esta semana 🐾 Las entregas son los jueves. ¿Te apunto para recibir tu muestra gratis de Petline?' }
+  ];
+
+  seguimientos[from] = msgs.map(function(m) {
+    return setTimeout(async function() {
+      // Solo enviar si no ha respondido desde que programamos
+      const conv = conversaciones[from];
+      if (!conv) return;
+      const ultimo = conv.mensajes[conv.mensajes.length - 1];
+      if (ultimo && ultimo.rol === 'cliente') return; // Ya respondio
+      console.log('Seguimiento automatico a ' + from);
+      guardarMensaje(from, 'bot', m.msg, negocio);
+      await sendMessage(from, m.msg);
+    }, m.delay);
+  });
+}
+
+function cancelarSeguimiento(from) {
+  if (seguimientos[from]) {
+    seguimientos[from].forEach(function(t) { clearTimeout(t); });
+    delete seguimientos[from];
+  }
+}
+
 // ─── GOOGLE MAPS DISTANCIA ───────────────────────────────────
 const BODEGA_LAT = 19.5397; // Av. Vista Hermosa 74, Tlalnepantla
 const BODEGA_LNG = -99.2097;
@@ -435,6 +469,8 @@ async function procesarMensaje(from, texto) {
     if (nn && nn !== session.negocio) { session.negocio = nn; session.historial = []; primerMensaje = true; }
   }
   guardarMensaje(from, 'cliente', texto, session.negocio);
+  // Cancelar seguimiento cuando el cliente responde
+  cancelarSeguimiento(from);
 
   // Interceptar VERIFICAR_ZONA generado por Claude
   if (texto.toUpperCase().includes('VERIFICAR_ZONA:')) {
@@ -475,9 +511,45 @@ async function procesarMensaje(from, texto) {
   session.historial.push({ role: 'user', content: primerMensaje ? 'hola' : texto });
   if (session.historial.length > 20) session.historial = session.historial.slice(-20);
   const respuesta = await callClaude(system, session.historial);
+
+  // Interceptar VERIFICAR_ZONA en la respuesta de Claude
+  if (session.negocio === 'petinc' && respuesta.includes('VERIFICAR_ZONA:')) {
+    const match = respuesta.match(/VERIFICAR_ZONA:\s*(.+?)(?:\n|$)/);
+    if (match) {
+      const dir = match[1].trim();
+      // Enviar mensaje de espera al cliente
+      const msgEspera = respuesta.replace(/VERIFICAR_ZONA:.*?(\n|$)/, '').trim() || 'Un momento, verifico tu zona... 🔍';
+      await sendMessage(from, msgEspera);
+
+      // Calcular distancia real con Google Maps
+      const km = await calcularDistanciaKm(dir);
+      console.log('Google Maps resultado para "' + dir + '": ' + km + 'km');
+
+      let msgZona;
+      if (km === null) {
+        msgZona = 'No pude verificar tu zona automaticamente. ¿Puedes confirmarme tu municipio exacto?';
+      } else if (km <= RADIO_KM) {
+        msgZona = '¡Perfecto! Tu zona está dentro de nuestra área de entrega (' + km + 'km de distancia). 🎉\n\nEl envío es GRATIS. ¿Cuál es tu dirección completa para enviarte la muestra?';
+      } else {
+        msgZona = 'Lo sentimos, tu zona está a ' + km + 'km de nuestra bodega, fuera de nuestro radio de entrega de 9km. 😔\n\nSolo entregamos en Tlalnepantla, Naucalpan y zonas muy cercanas de CDMX.';
+      }
+
+      session.historial.push({ role: 'assistant', content: msgEspera });
+      session.historial.push({ role: 'user', content: 'Resultado verificacion: ' + (km !== null ? km + 'km' : 'no disponible') });
+      session.historial.push({ role: 'assistant', content: msgZona });
+      guardarMensaje(from, 'bot', msgZona, session.negocio);
+      await sendMessage(from, msgZona);
+      return;
+    }
+  }
+
   session.historial.push({ role: 'assistant', content: respuesta });
   guardarMensaje(from, 'bot', respuesta, session.negocio);
   await sendMessage(from, respuesta);
+  // Programar seguimiento automatico si es Petinc y el cliente no ha cerrado la venta
+  if (session.negocio === 'petinc') {
+    programarSeguimiento(from, 'petinc');
+  }
 }
 
 // ─── PANEL WEB (mantenido para acceso directo) ────────────────
