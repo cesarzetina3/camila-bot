@@ -35,6 +35,7 @@ const PANEL_PASSWORD   = process.env.PANEL_PASSWORD || '123456789';
 const NUMERO_RESPUESTA = process.env.NUMERO_RESPUESTA || '5551062364';
 const MONGODB_URI      = process.env.MONGODB_URI;
 const PANEL_API_KEY    = process.env.PANEL_API_KEY || 'cpbp-panel-2026';
+const GOOGLE_MAPS_KEY  = process.env.GOOGLE_MAPS_KEY;
 
 const stripe = Stripe(STRIPE_KEY);
 const sessions = {};
@@ -90,6 +91,33 @@ async function conectarMongo() {
   } catch (err) { console.error('Error MongoDB:', err.message); }
 }
 conectarMongo();
+
+// ─── GOOGLE MAPS DISTANCIA ───────────────────────────────────
+const BODEGA_LAT = 19.5397; // Av. Vista Hermosa 74, Tlalnepantla
+const BODEGA_LNG = -99.2097;
+const RADIO_KM   = 9;
+
+async function calcularDistanciaKm(direccion) {
+  if (!GOOGLE_MAPS_KEY) return null;
+  try {
+    const query = encodeURIComponent(direccion + ', Mexico');
+    const url   = 'https://maps.googleapis.com/maps/api/geocode/json?address=' + query + '&key=' + GOOGLE_MAPS_KEY;
+    const res   = await axios.get(url);
+    if (res.data.status !== 'OK' || !res.data.results.length) return null;
+    const loc   = res.data.results[0].geometry.location;
+    // Fórmula Haversine
+    const R     = 6371;
+    const dLat  = (loc.lat - BODEGA_LAT) * Math.PI / 180;
+    const dLng  = (loc.lng - BODEGA_LNG) * Math.PI / 180;
+    const a     = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(BODEGA_LAT*Math.PI/180)*Math.cos(loc.lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    const dist  = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    console.log('Distancia a "' + direccion + '": ' + dist.toFixed(1) + 'km');
+    return Math.round(dist * 10) / 10;
+  } catch(err) {
+    console.error('Error Google Maps:', err.message);
+    return null;
+  }
+}
 
 // ─── NODEMAILER ───────────────────────────────────────────────
 const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD } });
@@ -277,24 +305,15 @@ PRODUCTO:
 - Envio gratis dentro de 9km de Av. Vista Hermosa 74, Tlalnepantla
 - MUESTRA GRATIS a domicilio dentro de 9km, sin costo ni compromiso
 
-ZONAS CON ENVIO GRATIS — SOLO estas colonias y municipios (maximo 9km de Tlalnepantla de Baz):
-Municipios SI: Tlalnepantla de Baz (todo), Naucalpan de Juarez (colonias cercanas: Jardines de San Mateo, San Andres Atoto, Industrial Vallejo, Potrero del Llano, San Javier, Buenavista, Prado Vallejo, San Lucas Patoni, La Florida, Barrientos, Xocoyahualco, Lomas Lindas, Satelite).
-Colonias de CDMX cercanas SI: Vallejo, Lindavista, Tepeyac, Nueva Industrial Vallejo, Claveria, Pensil, Tlatilco, Azcapotzalco centro.
+ZONA DE ENTREGA:
+El sistema calcula la distancia automaticamente. Tu trabajo es:
+1. Pedir la direccion completa con colonia y municipio
+2. Escribir exactamente: VERIFICAR_ZONA: [direccion completa]
+3. El sistema te dira si esta dentro o fuera de los 9km
+4. Si esta dentro: confirmar envio gratis
+5. Si esta fuera: "Lo sentimos, tu zona esta fuera de nuestra area de entrega de 9km. Solo entregamos en Tlalnepantla, Naucalpan y zonas cercanas."
 
-MUNICIPIOS FUERA DEL RANGO — siempre decir que NO aplica envio gratis:
-- Coacalco de Berriozabal (26km — SIEMPRE fuera)
-- Ecatepec de Morelos (fuera)
-- Cuautitlan Izcalli (fuera)
-- Cuautitlan Mexico (fuera)
-- Tultitlan (fuera)
-- Tultepec (fuera)
-- Zumpango (fuera)
-- Atizapan de Zaragoza (fuera)
-- Nicolas Romero (excepto colonias del sur extremo)
-- Cualquier municipio del Estado de Mexico que no sea Tlalnepantla o Naucalpan: NO aplica.
-
-REGLA CRITICA: Si el cliente menciona Coacalco, Ecatepec, Cuautitlan, Tultitlan o municipio lejano, responder exactamente: "Lo sentimos, tu zona esta fuera de nuestra area de entrega (9km de Tlalnepantla). Solo entregamos en Tlalnepantla, Naucalpan y zonas cercanas de CDMX."
-Si no estas seguro, pregunta el municipio completo antes de confirmar la zona.
+NUNCA confirmes ni niegues la zona sin haber escrito VERIFICAR_ZONA primero.
 
 INFORMACION DEL PRODUCTO:
 - 15% proteina minima, 6% grasa minima
@@ -416,6 +435,30 @@ async function procesarMensaje(from, texto) {
     if (nn && nn !== session.negocio) { session.negocio = nn; session.historial = []; primerMensaje = true; }
   }
   guardarMensaje(from, 'cliente', texto, session.negocio);
+
+  // Interceptar VERIFICAR_ZONA generado por Claude
+  if (texto.toUpperCase().includes('VERIFICAR_ZONA:')) {
+    const dir = texto.split(':').slice(1).join(':').trim();
+    const km  = await calcularDistanciaKm(dir);
+    let respZona;
+    if (km === null) {
+      respZona = 'No pude verificar la zona automaticamente. Por favor confirma tu municipio para verificar manualmente.';
+    } else if (km <= RADIO_KM) {
+      respZona = 'ZONA_OK:' + km;
+    } else {
+      respZona = 'ZONA_FUERA:' + km;
+    }
+    // Inyectar resultado en el historial y pedir a Claude que responda
+    session.historial.push({ role: 'user', content: 'Resultado de verificacion de zona para "' + dir + '": ' + respZona + '. Ahora responde al cliente.' });
+    if (session.historial.length > 20) session.historial = session.historial.slice(-20);
+    const system2 = session.negocio === 'petinc' ? SYSTEM_PETINC : SYSTEM_CHIRIMOYA;
+    const resp2   = await callClaude(system2, session.historial);
+    session.historial.push({ role: 'assistant', content: resp2 });
+    guardarMensaje(from, 'bot', resp2, session.negocio);
+    await sendMessage(from, resp2);
+    return;
+  }
+
   if (texto.toUpperCase().startsWith('PAGAR')) {
     const np = texto.substring(5).trim() || (session.negocio === 'petinc' ? 'Petline Mantenimiento 20kg' : 'Tratamiento Cabello Corto');
     const resultado = await crearLinkPago(np, session.negocio);
